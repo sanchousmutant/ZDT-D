@@ -95,6 +95,45 @@ class RootConfigManager(private val context: Context) {
     fun setCachedRemoteVersionCode(code: Int) {
         prefs.edit().putInt("gh_remote_version_code", code).apply()
     }
+    // ----- Batch writes (single SharedPreferences transaction) -----
+
+    fun setCachedLatestReleaseInfo(tag: String?, htmlUrl: String?, etag: String?) {
+        prefs.edit()
+            .putString("gh_latest_tag", tag)
+            .putString("gh_latest_html_url", htmlUrl)
+            .putString("gh_etag_latest_release", etag)
+            .apply()
+    }
+
+    fun setCachedRemoteVersionInfo(version: String?, code: Int, etag: String?) {
+        prefs.edit()
+            .putString("gh_remote_version", version)
+            .putInt("gh_remote_version_code", code)
+            .putString("gh_etag_module_prop", etag)
+            .apply()
+    }
+
+    fun setCachedAppUpdateResult(
+        available: Boolean,
+        urgent: Boolean,
+        releaseTag: String?,
+        htmlUrl: String?,
+        remoteVersion: String?,
+        remoteCode: Int,
+        downloadUrl: String?,
+        foundTs: Long,
+    ) {
+        prefs.edit()
+            .putBoolean("app_update_available", available)
+            .putBoolean("app_update_urgent", urgent)
+            .putString("app_update_release_tag", releaseTag)
+            .putString("app_update_release_html_url", htmlUrl)
+            .putString("app_update_remote_version", remoteVersion)
+            .putInt("app_update_remote_code", remoteCode)
+            .putString("app_update_download_url", downloadUrl)
+            .putLong("app_update_found_ts", foundTs)
+            .apply()
+    }
 
     
     // ----- App update cached result (persisted banner) -----

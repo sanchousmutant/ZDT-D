@@ -28,11 +28,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.scan
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,12 +71,12 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     uiStateFlow.map { it.device }.distinctUntilChanged()
   }.collectAsStateWithLifecycle(initialValue = UiState().device)
 
-  // Optional: freeze updates while the user is actively scrolling to avoid visual jitter.
-  var stableRep by remember { mutableStateOf<ApiModels.StatusReport?>(null) }
-  LaunchedEffect(rep, listState.isScrollInProgress) {
-    if (!listState.isScrollInProgress) stableRep = rep
-  }
-  val showRep = if (listState.isScrollInProgress) (stableRep ?: rep) else rep
+  // Freeze updates while scrolling to avoid visual jitter.
+  // When scrolling starts, the last non-null (stable) value is retained via scan.
+  val showRep by remember(uiStateFlow) {
+    snapshotFlow { if (listState.isScrollInProgress) null else rep }
+      .scan(rep) { last, next -> next ?: last }
+  }.collectAsStateWithLifecycle(initialValue = rep)
 
   val totals = ApiModels.computeTotals(showRep)
 

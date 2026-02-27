@@ -3,8 +3,11 @@ package com.android.zdtd.service.ui
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
+import android.graphics.ImageDecoder
+import android.graphics.drawable.AnimatedImageDrawable
+import android.os.Build
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,8 +22,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -35,6 +40,55 @@ import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+
+@Composable
+private fun AnimatedWebpImage(resId: Int, modifier: Modifier = Modifier) {
+  val context = LocalContext.current
+
+  if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+    Image(painter = painterResource(resId), contentDescription = null, modifier = modifier)
+    return
+  }
+
+  // Decode drawable (AnimatedImageDrawable for animated WebP on API 28+)
+  val animatedDrawable = remember(resId) {
+    val source = ImageDecoder.createSource(context.resources, resId)
+    ImageDecoder.decodeDrawable(source) as? AnimatedImageDrawable
+  }
+
+  if (animatedDrawable == null) {
+    Image(painter = painterResource(resId), contentDescription = null, modifier = modifier)
+    return
+  }
+
+  // invalidationTick is read only inside the Canvas lambda — this causes only a
+  // draw-phase invalidation (no recomposition) on every animated frame.
+  val invalidationTick = remember { androidx.compose.runtime.mutableStateOf(0) }
+
+  DisposableEffect(animatedDrawable) {
+    animatedDrawable.callback = object : android.graphics.drawable.Drawable.Callback {
+      override fun invalidateDrawable(who: android.graphics.drawable.Drawable) {
+        invalidationTick.value++
+      }
+      override fun scheduleDrawable(who: android.graphics.drawable.Drawable, what: Runnable, `when`: Long) {}
+      override fun unscheduleDrawable(who: android.graphics.drawable.Drawable, what: Runnable) {}
+    }
+    animatedDrawable.start()
+    onDispose {
+      animatedDrawable.stop()
+      animatedDrawable.callback = null
+    }
+  }
+
+  androidx.compose.foundation.Canvas(modifier = modifier) {
+    // Reading invalidationTick here keeps invalidation scoped to the draw phase only.
+    @Suppress("UNUSED_EXPRESSION") invalidationTick.value
+    drawIntoCanvas { canvas ->
+      animatedDrawable.setBounds(0, 0, size.width.toInt(), size.height.toInt())
+      animatedDrawable.draw(canvas.nativeCanvas)
+    }
+  }
+}
 
 @Composable
 fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
@@ -83,11 +137,7 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
 
     Spacer(Modifier.height(18.dp))
 
-    // Power button (image-based) — same as stage16
-    val powerPainter = remember(on) {
-      if (on) R.drawable.power_on else R.drawable.power_off
-    }
-
+    // Power button — animated WebP when on, static when off
     Box(
       contentAlignment = Alignment.Center,
       modifier = Modifier
@@ -96,14 +146,18 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
         .clip(CircleShape)
         .clickable(enabled = !busy) { actions.toggleService() },
     ) {
-      // The images already include the full button styling (glow/ring).
-      Image(
-        painter = painterResource(powerPainter),
-        contentDescription = null,
-        modifier = Modifier
-          .fillMaxSize()
-          .clip(CircleShape),
-      )
+      if (on) {
+        AnimatedWebpImage(
+          resId = R.drawable.power_on,
+          modifier = Modifier.fillMaxSize().clip(CircleShape),
+        )
+      } else {
+        Image(
+          painter = painterResource(R.drawable.power_off),
+          contentDescription = null,
+          modifier = Modifier.fillMaxSize().clip(CircleShape),
+        )
+      }
     }
 
     Spacer(Modifier.height(18.dp))

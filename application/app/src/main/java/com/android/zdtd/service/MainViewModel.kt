@@ -444,9 +444,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
         val js = runCatching { JSONObject(bodyRel ?: "{}") }.getOrNull() ?: JSONObject()
         tag = js.optString("tag_name").takeIf { it.isNotBlank() }
         htmlUrl = js.optString("html_url").takeIf { it.isNotBlank() }
-        root.setCachedLatestReleaseTag(tag)
-        root.setCachedLatestReleaseHtmlUrl(htmlUrl)
-        root.setGitHubEtagLatestRelease(newEtagRel)
+        root.setCachedLatestReleaseInfo(tag, htmlUrl, newEtagRel)
       }
       304 -> {
         tag = root.getCachedLatestReleaseTag()
@@ -482,9 +480,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
         val txt = bodyProp ?: ""
         remoteVersion = parseVersion(txt)
         remoteCode = parseVersionCode(txt)
-        root.setCachedRemoteVersion(remoteVersion)
-        root.setCachedRemoteVersionCode(remoteCode ?: 0)
-        root.setGitHubEtagModuleProp(newEtagProp)
+        root.setCachedRemoteVersionInfo(remoteVersion, remoteCode ?: 0, newEtagProp)
       }
       304 -> {
         remoteVersion = root.getCachedRemoteVersion()
@@ -552,14 +548,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     appUpdateBannerDismissedThisSession = false
 
     root.setAppUpdateLastCheckTs(now)
-    root.setCachedAppUpdateAvailable(true)
-    root.setCachedAppUpdateUrgent(urgent)
-    root.setCachedAppUpdateReleaseTag(tag)
-    root.setCachedAppUpdateReleaseHtmlUrl(htmlUrl)
-    root.setCachedAppUpdateRemoteVersion(remoteVersion)
-    root.setCachedAppUpdateRemoteVersionCode(rc)
-    root.setCachedAppUpdateDownloadUrl(downloadUrl)
-    root.setCachedAppUpdateFoundTs(now)
+    root.setCachedAppUpdateResult(
+      available = true,
+      urgent = urgent,
+      releaseTag = tag,
+      htmlUrl = htmlUrl,
+      remoteVersion = remoteVersion,
+      remoteCode = rc,
+      downloadUrl = downloadUrl,
+      foundTs = now,
+    )
     _appUpdate.update { it.copy(
       enabled = root.isAppUpdateCheckEnabled(),
       checking = false,
@@ -3114,14 +3112,19 @@ private fun shQuote(s: String): String {
   private fun startStatusPolling() {
     statusJob?.cancel()
     statusJob = launchIO {
+      var failCount = 0
       while (isActive) {
         try {
           fetchAndUpdateStatus()
+          failCount = 0
+          delay(2200)
         } catch (e: Throwable) {
           _uiState.update { st -> if (!st.daemonOnline) st else st.copy(daemonOnline = false) }
           log("ERR", "status poll failed: ${e.message ?: e}")
+          failCount++
+          // Exponential backoff: 2.2s, 4.4s, 8.8s, 17.6s, capped at 30s
+          delay(minOf(2200L shl failCount.coerceAtMost(4), 30_000L))
         }
-        delay(2200)
       }
     }
   }
@@ -3129,13 +3132,17 @@ private fun shQuote(s: String): String {
   private fun startDaemonLogPolling() {
     daemonLogJob?.cancel()
     daemonLogJob = launchIO {
+      var failCount = 0
       while (isActive) {
         try {
           refreshDaemonLogOnce()
+          failCount = 0
+          delay(1500)
         } catch (e: Throwable) {
           log("ERR", "daemon log poll failed: ${e.message ?: e}")
+          failCount++
+          delay(minOf(1500L shl failCount.coerceAtMost(4), 30_000L))
         }
-        delay(1500)
       }
     }
   }
@@ -3696,5 +3703,13 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     } catch (_: Throwable) {
       null
     }
+  }
+
+  override fun onCleared() {
+    super.onCleared()
+    statusJob?.cancel()
+    daemonLogJob?.cancel()
+    githubHttp.dispatcher.executorService.shutdown()
+    githubHttp.connectionPool.evictAll()
   }
 }
