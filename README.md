@@ -1,7 +1,7 @@
 # ZDT-D Root Module (Magisk / KernelSU / APatch)
 
 <div align="center">
-  <img src="https://github.com/GAME-OVER-op/ZDT-D/blob/main/images/module_icon.png" alt="ZDT-D Logo" width="300" />
+  <img src="https://github.com/GAME-OVER-op/ZDT-D/blob/main/images/module_icon.png" alt="ZDT-D Logo" width="300" /><img src="https://github.com/sanchousmutant/ZDT-D/blob/main/application/app/src/main/res/drawable/power_on.webp" alt="animated image" width="300" />
 </div>
 
 <p align="center">
